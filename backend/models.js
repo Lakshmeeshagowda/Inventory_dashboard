@@ -2,6 +2,7 @@
 const mongoose = require('mongoose');
 
 const ProductSchema = new mongoose.Schema({
+  ownerId: { type: String, required: true, index: true }, // Links data to specific user
   name: String,
   category: String,
   unit: String,
@@ -11,6 +12,7 @@ const ProductSchema = new mongoose.Schema({
 });
 
 const CustomerSchema = new mongoose.Schema({
+  ownerId: { type: String, required: true, index: true }, // Links data to specific user
   name: String,
   city: String,
   address: String,
@@ -20,6 +22,7 @@ const CustomerSchema = new mongoose.Schema({
 });
 
 const SaleSchema = new mongoose.Schema({
+  ownerId: { type: String, required: true, index: true }, // Links data to specific user
   productId: String,
   customerId: String,
   quantity: Number,

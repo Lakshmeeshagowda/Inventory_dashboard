@@ -19,7 +19,8 @@ const DB_KEYS = {
   PRODUCTS: 'agri_products',
   CUSTOMERS: 'agri_customers',
   SALES: 'agri_sales',
-  TOKEN: 'agri_auth_token'
+  TOKEN: 'agri_auth_token',
+  CURRENT_USER: 'agri_current_user_phone' // To track who is logged in for Mock Mode
 };
 
 const db = {
@@ -36,20 +37,8 @@ const db = {
   }
 };
 
-const seedData = {
-  products: [
-    { id: 'p1', name: 'Urea', category: 'Nitrogenous Fertilizers', unit: 'bag', purchasePrice: 1100, sellingPrice: 1150, stock: 15 },
-    { id: 'p2', name: 'Potassium', category: 'Potassic Fertilizers', unit: 'bag', purchasePrice: 800, sellingPrice: 850, stock: 10 },
-  ] as Product[],
-  customers: [
-    { id: 'c1', name: 'Taha', city: 'Bengaluru', address: 'Ashwathnagar Nagavara', purchaseDate: '2025-11-04', purchasedProduct: 'Urea', quantity: 5 },
-    { id: 'c2', name: 'Lakshmeesha', city: 'Belthangady', address: 'Bangady house, Indabettu', purchaseDate: '2025-11-04', purchasedProduct: 'Potassium', quantity: 10 },
-  ] as Customer[],
-  sales: [
-    { id: 's1', productId: 'p1', customerId: 'c1', quantity: 5, date: '2025-11-04', totalRevenue: 5750, totalProfit: 250 },
-    { id: 's2', productId: 'p2', customerId: 'c2', quantity: 10, date: '2025-11-04', totalRevenue: 8500, totalProfit: 500 },
-  ] as Sale[]
-};
+// In mock mode, we need to know "who" is requesting data
+const getMockUser = () => localStorage.getItem(DB_KEYS.CURRENT_USER);
 
 const otpStore: Record<string, string> = {};
 
@@ -57,7 +46,6 @@ const otpStore: Record<string, string> = {};
 const realApi = {
   healthCheck: async () => {
     try {
-      // We try to hit the root of the backend, removing the '/api' suffix if present
       const rootUrl = API_BASE_URL.replace('/api', '');
       const res = await fetch(rootUrl);
       return res.ok ? 'cloud' : 'offline';
@@ -81,17 +69,29 @@ const realApi = {
         body: JSON.stringify({ phoneNumber, otp })
       });
       const data = await res.json();
-      if (data.token) localStorage.setItem(DB_KEYS.TOKEN, data.token);
+      if (data.token) {
+        localStorage.setItem(DB_KEYS.TOKEN, data.token);
+        // We decode the token simply to get the sub for UI purposes, though the backend validates it
+        try {
+            const payload = JSON.parse(atob(data.token.split('.')[1]));
+            localStorage.setItem(DB_KEYS.CURRENT_USER, payload.sub);
+        } catch(e) {}
+      }
       return data;
     },
     logout: async () => {
       localStorage.removeItem(DB_KEYS.TOKEN);
+      localStorage.removeItem(DB_KEYS.CURRENT_USER);
     },
-    isAuthenticated: () => !!localStorage.getItem(DB_KEYS.TOKEN)
+    isAuthenticated: () => !!localStorage.getItem(DB_KEYS.TOKEN),
+    getCurrentUser: () => localStorage.getItem(DB_KEYS.CURRENT_USER)
   },
   products: {
     list: async () => {
-      const res = await fetch(`${API_BASE_URL}/products`);
+      const token = localStorage.getItem(DB_KEYS.TOKEN);
+      const res = await fetch(`${API_BASE_URL}/products`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
       return res.json();
     },
     add: async (product: Omit<Product, 'id'>) => {
@@ -122,7 +122,10 @@ const realApi = {
   },
   customers: {
     list: async () => {
-      const res = await fetch(`${API_BASE_URL}/customers`);
+      const token = localStorage.getItem(DB_KEYS.TOKEN);
+      const res = await fetch(`${API_BASE_URL}/customers`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
       return res.json();
     },
     add: async (customer: Omit<Customer, 'id'>) => {
@@ -137,7 +140,10 @@ const realApi = {
   },
   sales: {
     list: async () => {
-      const res = await fetch(`${API_BASE_URL}/sales`);
+      const token = localStorage.getItem(DB_KEYS.TOKEN);
+      const res = await fetch(`${API_BASE_URL}/sales`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
       return res.json();
     },
     create: async (data: any) => {
@@ -155,7 +161,8 @@ const realApi = {
   }
 };
 
-// --- MOCK API IMPLEMENTATION (LocalStorage) ---
+// --- MOCK API IMPLEMENTATION (LocalStorage with Multi-Tenancy) ---
+// We add an 'ownerId' field to mock data to simulate isolation
 const mockApi = {
   healthCheck: async () => 'local',
   auth: {
@@ -173,54 +180,79 @@ const mockApi = {
       if (otpStore[cleanedPhone] === code) {
         const token = `mock-jwt-token-${Date.now()}`;
         localStorage.setItem(DB_KEYS.TOKEN, token);
+        localStorage.setItem(DB_KEYS.CURRENT_USER, cleanedPhone); // Store who is logged in
         delete otpStore[cleanedPhone];
         return { success: true, token };
       }
       return { success: false };
     },
-    logout: async () => localStorage.removeItem(DB_KEYS.TOKEN),
-    isAuthenticated: () => !!localStorage.getItem(DB_KEYS.TOKEN)
+    logout: async () => {
+        localStorage.removeItem(DB_KEYS.TOKEN);
+        localStorage.removeItem(DB_KEYS.CURRENT_USER);
+    },
+    isAuthenticated: () => !!localStorage.getItem(DB_KEYS.TOKEN),
+    getCurrentUser: () => localStorage.getItem(DB_KEYS.CURRENT_USER)
   },
   products: {
-    list: async (): Promise<Product[]> => db.get<Product[]>(DB_KEYS.PRODUCTS, seedData.products),
+    list: async (): Promise<Product[]> => {
+        const currentUser = getMockUser();
+        const allProducts = db.get<any[]>(DB_KEYS.PRODUCTS, []);
+        // Only return products owned by this user
+        return allProducts.filter(p => p.ownerId === currentUser);
+    },
     add: async (product: Omit<Product, 'id'>): Promise<Product> => {
-      const products = db.get<Product[]>(DB_KEYS.PRODUCTS, seedData.products);
-      const newProduct = { ...product, id: `p${Date.now()}` };
+      const currentUser = getMockUser();
+      const products = db.get<any[]>(DB_KEYS.PRODUCTS, []);
+      const newProduct = { ...product, id: `p${Date.now()}`, ownerId: currentUser };
       db.set(DB_KEYS.PRODUCTS, [...products, newProduct]);
       return newProduct;
     },
     update: async (product: Product): Promise<Product> => {
-      const products = db.get<Product[]>(DB_KEYS.PRODUCTS, seedData.products);
-      const updated = products.map(p => p.id === product.id ? product : p);
+      const currentUser = getMockUser();
+      const products = db.get<any[]>(DB_KEYS.PRODUCTS, []);
+      const updated = products.map(p => (p.id === product.id && p.ownerId === currentUser) ? { ...product, ownerId: currentUser } : p);
       db.set(DB_KEYS.PRODUCTS, updated);
       return product;
     },
     delete: async (id: string): Promise<void> => {
-      const products = db.get<Product[]>(DB_KEYS.PRODUCTS, seedData.products);
-      db.set(DB_KEYS.PRODUCTS, products.filter(p => p.id !== id));
+      const currentUser = getMockUser();
+      const products = db.get<any[]>(DB_KEYS.PRODUCTS, []);
+      db.set(DB_KEYS.PRODUCTS, products.filter(p => !(p.id === id && p.ownerId === currentUser)));
     }
   },
   customers: {
-    list: async (): Promise<Customer[]> => db.get<Customer[]>(DB_KEYS.CUSTOMERS, seedData.customers),
+    list: async (): Promise<Customer[]> => {
+        const currentUser = getMockUser();
+        const all = db.get<any[]>(DB_KEYS.CUSTOMERS, []);
+        return all.filter(c => c.ownerId === currentUser);
+    },
     add: async (customer: Omit<Customer, 'id'>): Promise<Customer> => {
-      const customers = db.get<Customer[]>(DB_KEYS.CUSTOMERS, seedData.customers);
-      const newCustomer = { ...customer, id: `c${Date.now()}` };
+      const currentUser = getMockUser();
+      const customers = db.get<any[]>(DB_KEYS.CUSTOMERS, []);
+      const newCustomer = { ...customer, id: `c${Date.now()}`, ownerId: currentUser };
       db.set(DB_KEYS.CUSTOMERS, [...customers, newCustomer]);
       return newCustomer;
     }
   },
   sales: {
-    list: async (): Promise<Sale[]> => db.get<Sale[]>(DB_KEYS.SALES, seedData.sales),
+    list: async (): Promise<Sale[]> => {
+        const currentUser = getMockUser();
+        const all = db.get<any[]>(DB_KEYS.SALES, []);
+        return all.filter(s => s.ownerId === currentUser);
+    },
     create: async (data: { productId: string; quantity: number; customerName: string; customerCity: string; customerAddress: string }): Promise<void> => {
-      const products = db.get<Product[]>(DB_KEYS.PRODUCTS, seedData.products);
-      const product = products.find(p => p.id === data.productId);
+      const currentUser = getMockUser();
+      
+      const products = db.get<any[]>(DB_KEYS.PRODUCTS, []);
+      const product = products.find(p => p.id === data.productId && p.ownerId === currentUser);
       
       if (!product) throw new Error("Product not found");
       if (product.stock < data.quantity) throw new Error("Insufficient stock available");
 
-      const customers = db.get<Customer[]>(DB_KEYS.CUSTOMERS, seedData.customers);
-      const newCustomer: Customer = {
+      const customers = db.get<any[]>(DB_KEYS.CUSTOMERS, []);
+      const newCustomer = {
         id: `c${Date.now()}`,
+        ownerId: currentUser,
         name: data.customerName,
         city: data.customerCity,
         address: data.customerAddress,
@@ -230,9 +262,10 @@ const mockApi = {
       };
       db.set(DB_KEYS.CUSTOMERS, [...customers, newCustomer]);
 
-      const sales = db.get<Sale[]>(DB_KEYS.SALES, seedData.sales);
-      const newSale: Sale = {
+      const sales = db.get<any[]>(DB_KEYS.SALES, []);
+      const newSale = {
         id: `s${Date.now()}`,
+        ownerId: currentUser,
         productId: data.productId,
         customerId: newCustomer.id,
         quantity: data.quantity,

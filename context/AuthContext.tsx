@@ -5,6 +5,7 @@ import { useToast } from './ToastContext';
 
 interface AuthContextType {
   isAuthenticated: boolean;
+  currentUser: string | null;
   requestOtp: (phone: string) => Promise<{ success: boolean; message: string }>;
   verifyLoginOtp: (phone: string, otp: string) => Promise<boolean>;
   logout: () => void;
@@ -12,6 +13,7 @@ interface AuthContextType {
 
 export const AuthContext = createContext<AuthContextType>({
   isAuthenticated: false,
+  currentUser: null,
   requestOtp: async () => ({ success: false, message: '' }),
   verifyLoginOtp: async () => false,
   logout: () => {},
@@ -19,18 +21,21 @@ export const AuthContext = createContext<AuthContextType>({
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+  const [currentUser, setCurrentUser] = useState<string | null>(null);
   const { showToast } = useToast();
 
   useEffect(() => {
-    // Check if a valid token exists in the "Database" (localStorage) on mount
-    setIsAuthenticated(api.auth.isAuthenticated());
+    // Check if a valid token exists on mount
+    const isAuth = api.auth.isAuthenticated();
+    setIsAuthenticated(isAuth);
+    if(isAuth) {
+        setCurrentUser(api.auth.getCurrentUser());
+    }
   }, []);
   
   const requestOtp = useCallback(async (phone: string) => {
     const response = await api.auth.sendOtp(phone);
     if (response.success && response.otp) {
-        // In a real app, this toast wouldn't exist, the user would get an SMS.
-        // For this demo, we show the OTP in a Toast notification.
         showToast(`DEMO SMS: Your OTP is ${response.otp}`, 'info');
     } else if (!response.success) {
         showToast(response.message, 'error');
@@ -42,6 +47,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const response = await api.auth.verifyOtp(phone, otp);
     if (response.success) {
       setIsAuthenticated(true);
+      setCurrentUser(phone); // Update UI state immediately
       showToast('Login Successful', 'success');
       return true;
     } else {
@@ -53,15 +59,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const logout = useCallback(() => {
     api.auth.logout();
     setIsAuthenticated(false);
+    setCurrentUser(null);
     showToast('Logged out successfully', 'info');
   }, [showToast]);
 
   const value = useMemo(() => ({
     isAuthenticated,
+    currentUser,
     requestOtp,
     verifyLoginOtp,
     logout,
-  }), [isAuthenticated, requestOtp, verifyLoginOtp, logout]);
+  }), [isAuthenticated, currentUser, requestOtp, verifyLoginOtp, logout]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };

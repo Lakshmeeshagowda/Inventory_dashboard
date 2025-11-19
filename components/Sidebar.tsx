@@ -1,8 +1,9 @@
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useContext } from 'react';
 import type { NavItem } from '../types';
-import { LogOut, Menu, X, Leaf, Activity, Database, WifiOff } from 'lucide-react';
+import { LogOut, Menu, X, Leaf, User } from 'lucide-react';
 import { api } from '../services/api';
+import { AuthContext } from '../context/AuthContext';
 
 interface SidebarProps {
   navItems: NavItem[];
@@ -14,6 +15,7 @@ interface SidebarProps {
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ navItems, activePage, setActivePage, logout, isOpen, setIsOpen }) => {
+  const { currentUser } = useContext(AuthContext);
   const [status, setStatus] = useState<'cloud' | 'local' | 'offline'>('local');
   const [isChecking, setIsChecking] = useState(true);
 
@@ -49,6 +51,20 @@ const Sidebar: React.FC<SidebarProps> = ({ navItems, activePage, setActivePage, 
           <X size={24} />
         </button>
       </div>
+
+      {/* User Profile Section */}
+      <div className="px-4 mb-4">
+        <div className="bg-slate-900/50 p-3 rounded-lg border border-slate-700 flex items-center space-x-3">
+            <div className="bg-cyan-500/20 p-2 rounded-full">
+                <User size={20} className="text-cyan-400"/>
+            </div>
+            <div className="overflow-hidden">
+                <p className="text-xs text-gray-400 uppercase font-bold">Logged in as</p>
+                <p className="text-sm text-white font-mono truncate">{currentUser || 'User'}</p>
+            </div>
+        </div>
+      </div>
+
       <nav className="flex-1">
         <ul>
           {navItems.map((item) => (

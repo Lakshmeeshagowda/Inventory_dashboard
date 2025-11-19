@@ -14,7 +14,6 @@ const JWT_SECRET = process.env.JWT_SECRET || 'your_super_secret_jwt_key';
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/agriferti';
 
 // Middleware
-// CORS: Allow all origins for simplicity in this demo. For production, you might want to restrict this.
 app.use(cors({
     origin: '*', 
     methods: ['GET', 'POST', 'PUT', 'DELETE'],
@@ -23,11 +22,14 @@ app.use(cors({
 app.use(bodyParser.json());
 
 // Database Connection
-mongoose.connect(MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true })
+mongoose.connect(MONGO_URI, { 
+    useNewUrlParser: true, 
+    useUnifiedTopology: true,
+    serverSelectionTimeoutMS: 5000 // Fail faster if blocked
+})
   .then(() => console.log('MongoDB Connected'))
   .catch(err => {
     console.error('DB Connection Error:', err);
-    // Keep the process alive but log the error, or exit process.exit(1)
   });
 
 // Auth Middleware
@@ -36,14 +38,19 @@ const authenticate = (req, res, next) => {
   if (!token) return res.status(401).json({ message: 'Unauthorized' });
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
-    req.user = decoded;
+    req.user = decoded; // req.user.sub contains the PhoneNumber
     next();
   } catch (e) {
     res.status(401).json({ message: 'Invalid Token' });
   }
 };
 
-// Routes
+// --- ROUTES ---
+
+// Health Check
+app.get('/', (req, res) => {
+    res.send("AgriFerti Backend is Running");
+});
 
 // 1. Auth Routes
 app.post('/api/auth/send-otp', async (req, res) => {
@@ -58,7 +65,7 @@ app.post('/api/auth/send-otp', async (req, res) => {
     );
 
     console.log(`OTP for ${phoneNumber}: ${otp}`); // For demo purposes
-    res.json({ success: true, message: 'OTP sent', otp }); // Returning OTP for demo convenience
+    res.json({ success: true, message: 'OTP sent', otp }); 
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -69,8 +76,10 @@ app.post('/api/auth/verify-otp', async (req, res) => {
     const { phoneNumber, otp } = req.body;
     const record = await Otp.findOne({ phoneNumber });
     
-    if (record && record.otp === otp) {
-      const token = jwt.sign({ sub: phoneNumber, role: 'admin' }, JWT_SECRET, { expiresIn: '1d' });
+    // In a real production app, remove the '|| otp === "123456"' backdoor
+    if ((record && record.otp === otp)) {
+      // We use the phoneNumber as the 'sub' (Subject) of the token
+      const token = jwt.sign({ sub: phoneNumber, role: 'admin' }, JWT_SECRET, { expiresIn: '30d' });
       await Otp.deleteOne({ phoneNumber }); // Burn OTP
       return res.json({ success: true, token });
     }
@@ -80,11 +89,11 @@ app.post('/api/auth/verify-otp', async (req, res) => {
   }
 });
 
-// 2. Product Routes
-app.get('/api/products', async (req, res) => {
+// 2. Product Routes (Scoped by ownerId)
+app.get('/api/products', authenticate, async (req, res) => {
   try {
-    const products = await Product.find();
-    // Map _id to id for frontend compatibility
+    // Only fetch products owned by the logged-in user
+    const products = await Product.find({ ownerId: req.user.sub });
     res.json(products.map(p => ({ ...p.toObject(), id: p._id })));
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -93,7 +102,8 @@ app.get('/api/products', async (req, res) => {
 
 app.post('/api/products', authenticate, async (req, res) => {
   try {
-    const product = new Product(req.body);
+    // Add ownerId when creating
+    const product = new Product({ ...req.body, ownerId: req.user.sub });
     await product.save();
     res.json({ ...product.toObject(), id: product._id });
   } catch (error) {
@@ -103,7 +113,13 @@ app.post('/api/products', authenticate, async (req, res) => {
 
 app.put('/api/products/:id', authenticate, async (req, res) => {
   try {
-    const updated = await Product.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    // Ensure user owns the product they are updating
+    const updated = await Product.findOneAndUpdate(
+        { _id: req.params.id, ownerId: req.user.sub },
+        req.body,
+        { new: true }
+    );
+    if (!updated) return res.status(404).json({ message: 'Product not found or unauthorized' });
     res.json({ ...updated.toObject(), id: updated._id });
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -112,17 +128,19 @@ app.put('/api/products/:id', authenticate, async (req, res) => {
 
 app.delete('/api/products/:id', authenticate, async (req, res) => {
   try {
-    await Product.findByIdAndDelete(req.params.id);
+    // Ensure user owns the product they are deleting
+    const result = await Product.findOneAndDelete({ _id: req.params.id, ownerId: req.user.sub });
+    if (!result) return res.status(404).json({ message: 'Product not found or unauthorized' });
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
 });
 
-// 3. Customer Routes
-app.get('/api/customers', async (req, res) => {
+// 3. Customer Routes (Scoped by ownerId)
+app.get('/api/customers', authenticate, async (req, res) => {
   try {
-    const customers = await Customer.find();
+    const customers = await Customer.find({ ownerId: req.user.sub });
     res.json(customers.map(c => ({ ...c.toObject(), id: c._id })));
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -131,7 +149,7 @@ app.get('/api/customers', async (req, res) => {
 
 app.post('/api/customers', authenticate, async (req, res) => {
   try {
-    const customer = new Customer(req.body);
+    const customer = new Customer({ ...req.body, ownerId: req.user.sub });
     await customer.save();
     res.json({ ...customer.toObject(), id: customer._id });
   } catch (error) {
@@ -139,10 +157,10 @@ app.post('/api/customers', authenticate, async (req, res) => {
   }
 });
 
-// 4. Sales Routes (Transaction)
-app.get('/api/sales', async (req, res) => {
+// 4. Sales Routes (Scoped by ownerId & Transaction)
+app.get('/api/sales', authenticate, async (req, res) => {
   try {
-    const sales = await Sale.find();
+    const sales = await Sale.find({ ownerId: req.user.sub });
     res.json(sales.map(s => ({ ...s.toObject(), id: s._id })));
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -151,17 +169,21 @@ app.get('/api/sales', async (req, res) => {
 
 app.post('/api/sales', authenticate, async (req, res) => {
   const { productId, quantity, customerName, customerCity, customerAddress } = req.body;
-  
+  const ownerId = req.user.sub;
+
   const session = await mongoose.startSession();
   session.startTransaction();
   
   try {
-    const product = await Product.findById(productId).session(session);
+    // Verify Product belongs to user
+    const product = await Product.findOne({ _id: productId, ownerId }).session(session);
+    
     if (!product) throw new Error('Product not found');
     if (product.stock < quantity) throw new Error('Insufficient Stock');
 
-    // 1. Create Customer
+    // 1. Create Customer (Scoped)
     const customer = new Customer({
+      ownerId,
       name: customerName,
       city: customerCity,
       address: customerAddress,
@@ -175,8 +197,9 @@ app.post('/api/sales', authenticate, async (req, res) => {
     product.stock -= quantity;
     await product.save({ session });
 
-    // 3. Create Sale
+    // 3. Create Sale (Scoped)
     const sale = new Sale({
+      ownerId,
       productId,
       customerId: customer._id,
       quantity,
