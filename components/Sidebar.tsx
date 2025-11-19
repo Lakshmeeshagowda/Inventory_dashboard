@@ -1,7 +1,8 @@
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import type { NavItem } from '../types';
-import { LogOut, Menu, X, Leaf } from 'lucide-react';
+import { LogOut, Menu, X, Leaf, Activity, Database, WifiOff } from 'lucide-react';
+import { api } from '../services/api';
 
 interface SidebarProps {
   navItems: NavItem[];
@@ -13,6 +14,23 @@ interface SidebarProps {
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ navItems, activePage, setActivePage, logout, isOpen, setIsOpen }) => {
+  const [status, setStatus] = useState<'cloud' | 'local' | 'offline'>('local');
+  const [isChecking, setIsChecking] = useState(true);
+
+  useEffect(() => {
+    const checkStatus = async () => {
+        setIsChecking(true);
+        const result = await api.healthCheck();
+        setStatus(result as any);
+        setIsChecking(false);
+    };
+    checkStatus();
+    
+    // Poll every 30 seconds to keep status updated
+    const interval = setInterval(checkStatus, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
   const handleNavClick = (page: string) => {
     setActivePage(page);
     if(window.innerWidth < 768) {
@@ -54,6 +72,36 @@ const Sidebar: React.FC<SidebarProps> = ({ navItems, activePage, setActivePage, 
           ))}
         </ul>
       </nav>
+      
+      <div className="p-4 mt-auto bg-slate-900/50 mx-4 rounded-lg mb-4 border border-slate-700">
+         <h4 className="text-xs text-gray-400 uppercase font-bold mb-3 flex items-center">
+            System Status
+         </h4>
+         <div className="flex items-center space-x-2 text-sm">
+            {isChecking ? (
+                <>
+                    <div className="w-2 h-2 rounded-full bg-yellow-400 animate-pulse"></div>
+                    <span className="text-gray-300">Checking...</span>
+                </>
+            ) : status === 'cloud' ? (
+                <>
+                    <div className="w-2 h-2 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]"></div>
+                    <span className="text-green-400 font-medium">Online (Cloud DB)</span>
+                </>
+            ) : status === 'local' ? (
+                <>
+                    <div className="w-2 h-2 rounded-full bg-orange-400"></div>
+                    <span className="text-orange-400 font-medium">Local Mode</span>
+                </>
+            ) : (
+                <>
+                    <div className="w-2 h-2 rounded-full bg-red-500"></div>
+                    <span className="text-red-400 font-medium">Server Offline</span>
+                </>
+            )}
+         </div>
+      </div>
+
       <div className="p-4 border-t border-slate-700">
         <button
           onClick={logout}

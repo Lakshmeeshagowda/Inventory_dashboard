@@ -2,10 +2,17 @@
 import type { Product, Customer, Sale } from '../types';
 
 // --- CONFIGURATION ---
-// Toggle this to TRUE to use the real Node.js + MongoDB backend
-// Toggle this to FALSE to use the browser LocalStorage (Demo Mode)
-const USE_REAL_BACKEND = true;
-const API_BASE_URL = 'http://localhost:5000/api';
+// Helper to ensure URL has protocol
+const getApiUrl = () => {
+    const envUrl = (import.meta as any).env?.VITE_API_URL;
+    if (!envUrl) return null;
+    if (envUrl.startsWith('http')) return envUrl;
+    return `https://${envUrl}`;
+};
+
+const ENV_API_URL = getApiUrl();
+const USE_REAL_BACKEND = !!ENV_API_URL || false; 
+const API_BASE_URL = ENV_API_URL || 'http://localhost:5000/api';
 
 // --- MOCK DATABASE (LocalStorage) ---
 const DB_KEYS = {
@@ -48,6 +55,16 @@ const otpStore: Record<string, string> = {};
 
 // --- REAL API IMPLEMENTATION (Fetch) ---
 const realApi = {
+  healthCheck: async () => {
+    try {
+      // We try to hit the root of the backend, removing the '/api' suffix if present
+      const rootUrl = API_BASE_URL.replace('/api', '');
+      const res = await fetch(rootUrl);
+      return res.ok ? 'cloud' : 'offline';
+    } catch (e) {
+      return 'offline';
+    }
+  },
   auth: {
     sendOtp: async (phoneNumber: string) => {
       const res = await fetch(`${API_BASE_URL}/auth/send-otp`, {
@@ -140,6 +157,7 @@ const realApi = {
 
 // --- MOCK API IMPLEMENTATION (LocalStorage) ---
 const mockApi = {
+  healthCheck: async () => 'local',
   auth: {
     sendOtp: async (phoneNumber: string): Promise<{ success: boolean; message: string; otp?: string }> => {
       await new Promise(resolve => setTimeout(resolve, 800));
