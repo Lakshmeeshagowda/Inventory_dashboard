@@ -36,7 +36,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const requestOtp = useCallback(async (phone: string) => {
     const response = await api.auth.sendOtp(phone);
     if (response.success && response.otp) {
-        showToast(`DEMO SMS: Your OTP is ${response.otp}`, 'info');
+        showToast(`Your OTP is ${response.otp}`, 'info');
     } else if (!response.success) {
         showToast(response.message, 'error');
     }
