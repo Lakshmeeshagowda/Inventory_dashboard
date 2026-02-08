@@ -40,7 +40,7 @@ const db = {
 // In mock mode, we need to know "who" is requesting data
 const getMockUser = () => localStorage.getItem(DB_KEYS.CURRENT_USER);
 
-const otpStore: Record<string, string> = {};
+const userStore: Record<string, { password: string; email?: string; phoneNumber?: string }> = {};
 
 // --- REAL API IMPLEMENTATION (Fetch) ---
 const realApi = {
@@ -54,30 +54,45 @@ const realApi = {
     }
   },
   auth: {
-    sendOtp: async (phoneNumber: string) => {
-      const res = await fetch(`${API_BASE_URL}/auth/send-otp`, {
+    signup: async (email: string | null, phoneNumber: string | null, password: string, confirmPassword: string) => {
+      const res = await fetch(`${API_BASE_URL}/auth/signup`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phoneNumber })
-      });
-      return res.json();
-    },
-    verifyOtp: async (phoneNumber: string, otp: string) => {
-      const res = await fetch(`${API_BASE_URL}/auth/verify-otp`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phoneNumber, otp })
+        body: JSON.stringify({ email, phoneNumber, password, confirmPassword })
       });
       const data = await res.json();
       if (data.token) {
         localStorage.setItem(DB_KEYS.TOKEN, data.token);
-        // We decode the token simply to get the sub for UI purposes, though the backend validates it
         try {
             const payload = JSON.parse(atob(data.token.split('.')[1]));
             localStorage.setItem(DB_KEYS.CURRENT_USER, payload.sub);
         } catch(e) {}
       }
       return data;
+    },
+    login: async (email: string | null, phoneNumber: string | null, password: string) => {
+      const res = await fetch(`${API_BASE_URL}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, phoneNumber, password })
+      });
+      const data = await res.json();
+      if (data.token) {
+        localStorage.setItem(DB_KEYS.TOKEN, data.token);
+        try {
+            const payload = JSON.parse(atob(data.token.split('.')[1]));
+            localStorage.setItem(DB_KEYS.CURRENT_USER, payload.sub);
+        } catch(e) {}
+      }
+      return data;
+    },
+    checkUser: async (email: string | null, phoneNumber: string | null) => {
+      const res = await fetch(`${API_BASE_URL}/auth/check-user`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, phoneNumber })
+      });
+      return res.json();
     },
     logout: async () => {
       localStorage.removeItem(DB_KEYS.TOKEN);
@@ -161,34 +176,73 @@ const realApi = {
   }
 };
 
-// --- MOCK API IMPLEMENTATION (LocalStorage with Multi-Tenancy) ---
-// We add an 'ownerId' field to mock data to simulate isolation
 const mockApi = {
   healthCheck: async () => 'local',
   auth: {
-    sendOtp: async (phoneNumber: string): Promise<{ success: boolean; message: string; otp?: string }> => {
+    signup: async (email: string | null, phoneNumber: string | null, password: string, confirmPassword: string): Promise<{ success: boolean; message: string; token?: string; userId?: string }> => {
       await new Promise(resolve => setTimeout(resolve, 800));
-      const cleanedPhone = phoneNumber.replace(/\D/g, '');
-      if (cleanedPhone.length < 10) return { success: false, message: 'Invalid phone number' };
-      const otp = Math.floor(100000 + Math.random() * 900000).toString();
-      otpStore[cleanedPhone] = otp;
-      return { success: true, message: 'OTP sent successfully', otp }; 
-    },
-    verifyOtp: async (phoneNumber: string, code: string): Promise<{ success: boolean; token?: string }> => {
-      await new Promise(resolve => setTimeout(resolve, 800));
-      const cleanedPhone = phoneNumber.replace(/\D/g, '');
-      if (otpStore[cleanedPhone] === code) {
-        const token = `mock-jwt-token-${Date.now()}`;
-        localStorage.setItem(DB_KEYS.TOKEN, token);
-        localStorage.setItem(DB_KEYS.CURRENT_USER, cleanedPhone); // Store who is logged in
-        delete otpStore[cleanedPhone];
-        return { success: true, token };
+      
+      if (password !== confirmPassword) {
+        return { success: false, message: 'Passwords do not match' };
       }
-      return { success: false };
+      
+      if (!email && !phoneNumber) {
+        return { success: false, message: 'Email or phone number is required' };
+      }
+
+      // Check if user exists
+      const identifier = email?.toLowerCase() || phoneNumber;
+      if (userStore[identifier]) {
+        return { success: false, message: 'User already exists. Please login.' };
+      }
+
+      // Create user
+      const userId = `user_${Date.now()}`;
+      userStore[identifier] = { password, email: email?.toLowerCase(), phoneNumber };
+      
+      const token = `mock-jwt-token-${Date.now()}`;
+      localStorage.setItem(DB_KEYS.TOKEN, token);
+      localStorage.setItem(DB_KEYS.CURRENT_USER, userId);
+
+      return { success: true, message: 'Signup successful', token, userId };
+    },
+    login: async (email: string | null, phoneNumber: string | null, password: string): Promise<{ success: boolean; message: string; token?: string; userId?: string }> => {
+      await new Promise(resolve => setTimeout(resolve, 800));
+
+      if (!password) {
+        return { success: false, message: 'Password is required' };
+      }
+
+      if (!email && !phoneNumber) {
+        return { success: false, message: 'Email or phone number is required' };
+      }
+
+      const identifier = email?.toLowerCase() || phoneNumber;
+      const user = userStore[identifier];
+
+      if (!user) {
+        return { success: false, message: 'User not found. Please sign up.' };
+      }
+
+      if (user.password !== password) {
+        return { success: false, message: 'Invalid password' };
+      }
+
+      const userId = `user_${identifier}`;
+      const token = `mock-jwt-token-${Date.now()}`;
+      localStorage.setItem(DB_KEYS.TOKEN, token);
+      localStorage.setItem(DB_KEYS.CURRENT_USER, userId);
+
+      return { success: true, message: 'Login successful', token, userId };
+    },
+    checkUser: async (email: string | null, phoneNumber: string | null): Promise<{ exists: boolean }> => {
+      await new Promise(resolve => setTimeout(resolve, 300));
+      const identifier = email?.toLowerCase() || phoneNumber;
+      return { exists: !!userStore[identifier] };
     },
     logout: async () => {
-        localStorage.removeItem(DB_KEYS.TOKEN);
-        localStorage.removeItem(DB_KEYS.CURRENT_USER);
+      localStorage.removeItem(DB_KEYS.TOKEN);
+      localStorage.removeItem(DB_KEYS.CURRENT_USER);
     },
     isAuthenticated: () => !!localStorage.getItem(DB_KEYS.TOKEN),
     getCurrentUser: () => localStorage.getItem(DB_KEYS.CURRENT_USER)
@@ -240,7 +294,7 @@ const mockApi = {
         const all = db.get<any[]>(DB_KEYS.SALES, []);
         return all.filter(s => s.ownerId === currentUser);
     },
-    create: async (data: { productId: string; quantity: number; customerName: string; customerCity: string; customerAddress: string }): Promise<void> => {
+    create: async (data: { productId: string; quantity: number; customerName: string; customerCity: string; customerAddress: string; customerPhone: string }): Promise<void> => {
       const currentUser = getMockUser();
       
       const products = db.get<any[]>(DB_KEYS.PRODUCTS, []);
@@ -254,6 +308,7 @@ const mockApi = {
         id: `c${Date.now()}`,
         ownerId: currentUser,
         name: data.customerName,
+        phoneNumber: data.customerPhone,
         city: data.customerCity,
         address: data.customerAddress,
         purchaseDate: new Date().toISOString().split('T')[0],

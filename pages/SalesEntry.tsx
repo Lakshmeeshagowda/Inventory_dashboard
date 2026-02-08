@@ -10,24 +10,26 @@ const SalesEntry: React.FC = () => {
   const [productId, setProductId] = useState(products.length > 0 ? products[0].id : '');
   const [quantity, setQuantity] = useState(1);
   const [customerName, setCustomerName] = useState('');
+  const [customerPhone, setCustomerPhone] = useState('');
   const [customerCity, setCustomerCity] = useState('');
   const [customerAddress, setCustomerAddress] = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!productId || quantity <= 0 || !customerName || !customerCity || !customerAddress) {
+    if (!productId || quantity <= 0 || !customerName || !customerPhone || !customerCity || !customerAddress) {
         showToast('Please fill all fields correctly.', 'error');
         return;
     }
     
     try {
-        await addSale({ productId, quantity, customerName, customerCity, customerAddress });
+        await addSale({ productId, quantity, customerName, customerPhone, customerCity, customerAddress });
         // Success handled by DataContext toast
         
         // Reset form
         setProductId(products.length > 0 ? products[0].id : '');
         setQuantity(1);
         setCustomerName('');
+        setCustomerPhone('');
         setCustomerCity('');
         setCustomerAddress('');
     } catch (error) {
@@ -75,6 +77,18 @@ const SalesEntry: React.FC = () => {
               type="text"
               value={customerName}
               onChange={(e) => setCustomerName(e.target.value)}
+              className="w-full bg-slate-900/50 border border-slate-700 text-white px-3 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-cyan-500"
+            />
+          </div>
+           <div className="mb-4">
+            <label className="block text-sm font-medium text-gray-300 mb-2" htmlFor="customerPhone">
+              Customer Phone Number
+            </label>
+            <input
+              id="customerPhone"
+              type="tel"
+              value={customerPhone}
+              onChange={(e) => setCustomerPhone(e.target.value)}
               className="w-full bg-slate-900/50 border border-slate-700 text-white px-3 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-cyan-500"
             />
           </div>

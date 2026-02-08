@@ -13,7 +13,7 @@ interface DataContextType {
     updateProduct: (product: Product) => Promise<void>;
     deleteProduct: (productId: string) => Promise<void>;
     addCustomer: (customer: Omit<Customer, 'id'>) => Promise<void>;
-    addSale: (sale: { productId: string; quantity: number; customerName: string; customerCity: string; customerAddress: string; }) => Promise<void>;
+    addSale: (sale: { productId: string; quantity: number; customerName: string; customerCity: string; customerAddress: string; customerPhone: string }) => Promise<void>;
 }
 
 export const DataContext = createContext<DataContextType>({} as DataContextType);
@@ -89,7 +89,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
     }, [refreshData, showToast]);
 
-    const addSale = useCallback(async (saleData: { productId: string; quantity: number; customerName: string, customerCity: string, customerAddress: string }) => {
+    const addSale = useCallback(async (saleData: { productId: string; quantity: number; customerName: string; customerCity: string; customerAddress: string; customerPhone: string }) => {
         try {
             await api.sales.create(saleData);
             await refreshData(); // Refresh to show updated stock and new customer/sale

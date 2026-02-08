@@ -6,16 +6,18 @@ import { useToast } from './ToastContext';
 interface AuthContextType {
   isAuthenticated: boolean;
   currentUser: string | null;
-  requestOtp: (phone: string) => Promise<{ success: boolean; message: string }>;
-  verifyLoginOtp: (phone: string, otp: string) => Promise<boolean>;
+  signup: (email: string | null, phoneNumber: string | null, password: string, confirmPassword: string) => Promise<{ success: boolean; message: string }>;
+  login: (email: string | null, phoneNumber: string | null, password: string) => Promise<{ success: boolean; message: string }>;
+  checkUser: (email: string | null, phoneNumber: string | null) => Promise<{ exists: boolean }>;
   logout: () => void;
 }
 
 export const AuthContext = createContext<AuthContextType>({
   isAuthenticated: false,
   currentUser: null,
-  requestOtp: async () => ({ success: false, message: '' }),
-  verifyLoginOtp: async () => false,
+  signup: async () => ({ success: false, message: '' }),
+  login: async () => ({ success: false, message: '' }),
+  checkUser: async () => ({ exists: false }),
   logout: () => {},
 });
 
@@ -33,28 +35,34 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, []);
   
-  const requestOtp = useCallback(async (phone: string) => {
-    const response = await api.auth.sendOtp(phone);
-    if (response.success && response.otp) {
-        showToast(`Your OTP is ${response.otp}`, 'info');
-    } else if (!response.success) {
-        showToast(response.message, 'error');
+  const signup = useCallback(async (email: string | null, phoneNumber: string | null, password: string, confirmPassword: string) => {
+    const response = await api.auth.signup(email, phoneNumber, password, confirmPassword);
+    if (response.success) {
+      setIsAuthenticated(true);
+      setCurrentUser(api.auth.getCurrentUser());
+      showToast('Signup Successful', 'success');
+    } else {
+      showToast(response.message, 'error');
     }
     return { success: response.success, message: response.message };
   }, [showToast]);
 
-  const verifyLoginOtp = useCallback(async (phone: string, otp: string) => {
-    const response = await api.auth.verifyOtp(phone, otp);
+  const login = useCallback(async (email: string | null, phoneNumber: string | null, password: string) => {
+    const response = await api.auth.login(email, phoneNumber, password);
     if (response.success) {
       setIsAuthenticated(true);
-      setCurrentUser(phone); // Update UI state immediately
+      setCurrentUser(api.auth.getCurrentUser());
       showToast('Login Successful', 'success');
-      return true;
+      return { success: true, message: 'Login Successful' };
     } else {
-      showToast('Invalid OTP. Please try again.', 'error');
+      showToast(response.message, 'error');
+      return { success: false, message: response.message };
     }
-    return false;
   }, [showToast]);
+
+  const checkUser = useCallback(async (email: string | null, phoneNumber: string | null) => {
+    return await api.auth.checkUser(email, phoneNumber);
+  }, []);
 
   const logout = useCallback(() => {
     api.auth.logout();
@@ -66,10 +74,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const value = useMemo(() => ({
     isAuthenticated,
     currentUser,
-    requestOtp,
-    verifyLoginOtp,
+    signup,
+    login,
+    checkUser,
     logout,
-  }), [isAuthenticated, currentUser, requestOtp, verifyLoginOtp, logout]);
+  }), [isAuthenticated, currentUser, signup, login, checkUser, logout]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };

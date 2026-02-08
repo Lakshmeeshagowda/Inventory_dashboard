@@ -4,8 +4,9 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 const jwt = require('jsonwebtoken');
 const bodyParser = require('body-parser');
+const bcrypt = require('bcrypt');
 require('dotenv').config(); // Load environment variables
-const { Product, Customer, Sale, Otp } = require('./models');
+const { User, Product, Customer, Sale } = require('./models');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -53,39 +54,121 @@ app.get('/', (req, res) => {
 });
 
 // 1. Auth Routes
-app.post('/api/auth/send-otp', async (req, res) => {
-  try {
-    const { phoneNumber } = req.body;
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    
-    await Otp.findOneAndUpdate(
-      { phoneNumber },
-      { otp, createdAt: new Date() },
-      { upsert: true, new: true }
-    );
 
-    console.log(`OTP for ${phoneNumber}: ${otp}`); // For demo purposes
-    res.json({ success: true, message: 'OTP sent', otp }); 
+// Signup Route
+app.post('/api/auth/signup', async (req, res) => {
+  try {
+    const { email, phoneNumber, password, confirmPassword } = req.body;
+    
+    if (!password || password !== confirmPassword) {
+      return res.status(400).json({ success: false, message: 'Passwords do not match' });
+    }
+    
+    if (!email && !phoneNumber) {
+      return res.status(400).json({ success: false, message: 'Email or phone number is required' });
+    }
+
+    // Check if user already exists
+    const existingUser = await User.findOne({
+      $or: [{ email: email?.toLowerCase() }, { phoneNumber }]
+    });
+
+    if (existingUser) {
+      return res.status(400).json({ success: false, message: 'User already exists. Please login.' });
+    }
+
+    // Hash password
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    // Create new user
+    const newUser = new User({
+      email: email ? email.toLowerCase() : null,
+      phoneNumber: phoneNumber || null,
+      password: hashedPassword
+    });
+
+    await newUser.save();
+
+    // Generate token
+    const userId = newUser._id.toString();
+    const token = jwt.sign({ sub: userId, email, phoneNumber }, JWT_SECRET, { expiresIn: '30d' });
+
+    res.json({ 
+      success: true, 
+      message: 'Signup successful',
+      token,
+      userId 
+    });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
 });
 
-app.post('/api/auth/verify-otp', async (req, res) => {
+// Login Route
+app.post('/api/auth/login', async (req, res) => {
   try {
-    const { phoneNumber, otp } = req.body;
-    const record = await Otp.findOne({ phoneNumber });
-    
-    // In a real production app, remove the '|| otp === "123456"' backdoor
-    if ((record && record.otp === otp)) {
-      // We use the phoneNumber as the 'sub' (Subject) of the token
-      const token = jwt.sign({ sub: phoneNumber, role: 'admin' }, JWT_SECRET, { expiresIn: '30d' });
-      await Otp.deleteOne({ phoneNumber }); // Burn OTP
-      return res.json({ success: true, token });
+    const { email, phoneNumber, password } = req.body;
+
+    if (!password) {
+      return res.status(400).json({ success: false, message: 'Password is required' });
     }
-    res.status(400).json({ success: false, message: 'Invalid OTP' });
+
+    if (!email && !phoneNumber) {
+      return res.status(400).json({ success: false, message: 'Email or phone number is required' });
+    }
+
+    // Find user by email or phone
+    const user = await User.findOne({
+      $or: [
+        email ? { email: email.toLowerCase() } : null,
+        phoneNumber ? { phoneNumber } : null
+      ].filter(Boolean)
+    });
+
+    if (!user) {
+      return res.status(400).json({ success: false, message: 'User not found. Please sign up.' });
+    }
+
+    // Verify password
+    const isPasswordValid = await bcrypt.compare(password, user.password);
+    if (!isPasswordValid) {
+      return res.status(400).json({ success: false, message: 'Invalid password' });
+    }
+
+    // Generate token
+    const userId = user._id.toString();
+    const token = jwt.sign({ sub: userId, email: user.email, phoneNumber: user.phoneNumber }, JWT_SECRET, { expiresIn: '30d' });
+
+    res.json({ 
+      success: true, 
+      message: 'Login successful',
+      token,
+      userId 
+    });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// Check if user exists
+app.post('/api/auth/check-user', async (req, res) => {
+  try {
+    const { email, phoneNumber } = req.body;
+
+    if (!email && !phoneNumber) {
+      return res.status(400).json({ exists: false });
+    }
+
+    const user = await User.findOne({
+      $or: [
+        email ? { email: email.toLowerCase() } : null,
+        phoneNumber ? { phoneNumber } : null
+      ].filter(Boolean)
+    });
+
+    res.json({ exists: !!user });
+  } catch (error) {
+    res.status(500).json({ exists: false, message: error.message });
   }
 });
 
@@ -168,7 +251,7 @@ app.get('/api/sales', authenticate, async (req, res) => {
 });
 
 app.post('/api/sales', authenticate, async (req, res) => {
-  const { productId, quantity, customerName, customerCity, customerAddress } = req.body;
+  const { productId, quantity, customerName, customerPhone, customerCity, customerAddress } = req.body;
   const ownerId = req.user.sub;
 
   const session = await mongoose.startSession();
@@ -185,6 +268,7 @@ app.post('/api/sales', authenticate, async (req, res) => {
     const customer = new Customer({
       ownerId,
       name: customerName,
+      phoneNumber: customerPhone,
       city: customerCity,
       address: customerAddress,
       purchaseDate: new Date().toISOString().split('T')[0],
