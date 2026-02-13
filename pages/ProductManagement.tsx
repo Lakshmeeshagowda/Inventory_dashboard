@@ -122,17 +122,35 @@ const ProductManagement: React.FC = () => {
           <h2 className="text-2xl font-bold text-white mb-4">{editingProduct ? 'Edit Product' : 'Add Product'}</h2>
           <div className="bg-slate-800/50 p-6 rounded-2xl border border-slate-700">
             <form onSubmit={handleSubmit}>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                <input type="text" name="name" value={formData.name} onChange={handleInputChange} placeholder="Name" required className="bg-slate-900/50 border border-slate-700 text-white px-3 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-cyan-500" />
-                <input type="text" name="category" value={formData.category} onChange={handleInputChange} placeholder="Category" required className="bg-slate-900/50 border border-slate-700 text-white px-3 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-cyan-500" />
-                <select name="unit" value={formData.unit} onChange={handleInputChange} className="bg-slate-900/50 border border-slate-700 text-white px-3 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-cyan-500">
-                    <option value="kg">kg</option>
-                    <option value="bag">bag</option>
-                    <option value="litre">litre</option>
-                </select>
-                <input type="number" step="0.01" name="purchasePrice" value={formData.purchasePrice} onChange={handleInputChange} placeholder="Purchase Price" required className="bg-slate-900/50 border border-slate-700 text-white px-3 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-cyan-500" />
-                <input type="number" step="0.01" name="sellingPrice" value={formData.sellingPrice} onChange={handleInputChange} placeholder="Selling Price" required className="bg-slate-900/50 border border-slate-700 text-white px-3 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-cyan-500" />
-                <input type="number" name="stock" value={formData.stock} onChange={handleInputChange} placeholder="Stock" required className="bg-slate-900/50 border border-slate-700 text-white px-3 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-cyan-500" />
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">Product Name</label>
+                  <input type="text" name="name" value={formData.name} onChange={handleInputChange} placeholder="Enter product name" required className="w-full bg-slate-900/50 border border-slate-700 text-white px-3 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-cyan-500" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">Category</label>
+                  <input type="text" name="category" value={formData.category} onChange={handleInputChange} placeholder="Enter category" required className="w-full bg-slate-900/50 border border-slate-700 text-white px-3 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-cyan-500" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">Unit</label>
+                  <select name="unit" value={formData.unit} onChange={handleInputChange} className="w-full bg-slate-900/50 border border-slate-700 text-white px-3 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-cyan-500">
+                      <option value="kg">kg</option>
+                      <option value="bag">bag</option>
+                      <option value="litre">litre</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">Purchase Price (₹)</label>
+                  <input type="number" step="0.01" name="purchasePrice" value={formData.purchasePrice} onChange={handleInputChange} placeholder="Enter purchase price" required className="w-full bg-slate-900/50 border border-slate-700 text-white px-3 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-cyan-500" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">Selling Price (₹)</label>
+                  <input type="number" step="0.01" name="sellingPrice" value={formData.sellingPrice} onChange={handleInputChange} placeholder="Enter selling price" required className="w-full bg-slate-900/50 border border-slate-700 text-white px-3 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-cyan-500" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">Stock Quantity</label>
+                  <input type="number" name="stock" value={formData.stock} onChange={handleInputChange} placeholder="Enter stock quantity" required className="w-full bg-slate-900/50 border border-slate-700 text-white px-3 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-cyan-500" />
+                </div>
               </div>
               <div className="flex space-x-4 mt-6">
                 <button type="submit" className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg transition duration-300">Save</button>
